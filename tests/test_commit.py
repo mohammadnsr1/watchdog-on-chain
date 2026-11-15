@@ -235,12 +235,12 @@ def test_real_log_shapes_roles_and_fingerprints(tmp_path):
     out = tmp_path / "out"
     index = commit_session(s, out, ByWindowSegmenter(5))
 
-    assert set(index["roles"]) == {"executor", "watchdog"}
+    assert set(index["roles"]) == {"executor", "backend"}
     assert index["roles"]["executor"][0]["n_chunks"] == 2
-    assert index["roles"]["watchdog"][0]["n_chunks"] == 1
-    wd = StepManifest.read(out / "manifests" / "watchdog" / "w000000.json")
-    assert {src.file for src in wd.chunk_sources} == {"events_gripper.jsonl"}
-    assert {f["file"]: f["role"] for f in index["source_files"]}["events_motion.jsonl"] == "watchdog"
+    assert index["roles"]["backend"][0]["n_chunks"] == 1
+    backend = StepManifest.read(out / "manifests" / "backend" / "w000000.json")
+    assert {src.file for src in backend.chunk_sources} == {"events_gripper.jsonl"}
+    assert {f["file"]: f["role"] for f in index["source_files"]}["events_motion.jsonl"] == "backend"
     assert [f["file"] for f in index["other_files"]] == ["manifest.json"]
     assert index["not_committed"] == ["bag/"]
 

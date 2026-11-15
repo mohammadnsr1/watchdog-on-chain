@@ -69,10 +69,13 @@ exact bytes) in `session_index.json`.
   | File | Role |
   |---|---|
   | `mcp_calls_executor.jsonl` (executor tool-call report) | `executor` |
-  | `events_gripper.jsonl`, `events_motion.jsonl`, `events_scene.jsonl` (WatchDog event streams, `/watchdog/events`) | `watchdog` (default aliases `gripper=watchdog`, `motion=watchdog`, `scene=watchdog`) |
-  | `mcp_calls_watchdog.jsonl`, `events_watchdog.jsonl` (newer sessions) | `watchdog` |
+  | `events_watchdog.jsonl` (verdicts, monitor events), `mcp_calls_watchdog.jsonl` (WatchDog tool calls) | `watchdog` |
+  | `events_executor_monitor.jsonl` (S4, unguarded runs) | `executor_monitor` |
+  | `events_gripper.jsonl`, `events_motion.jsonl`, `events_scene.jsonl` (skill events from the robot-side MCP servers) | `backend` (default aliases `gripper=backend`, `motion=backend`, `scene=backend`) |
 
-  Pass `--role-alias gripper=gripper` (and so on) to commit an event stream as its own role.
+  The skill-server logs also exist in unguarded S4 sessions where no WatchDog ran, so they are
+  committed as their own witness rather than as WatchDog evidence. Use `--role-alias` to
+  change the mapping, e.g. `gripper=gripper` to commit each server separately.
 - Other top-level files (the recorder's `manifest.json`, `agent_config_*.json`) are
   fingerprinted in the index (`other_files`) but not chunked. Sub-directories (`bag/`,
   `orchestrator/`) are listed under `not_committed`.
@@ -93,20 +96,22 @@ exact bytes) in `session_index.json`.
 
 ### Log field names (found in the imported sessions)
 
-These fields were checked against sample lines from `data/transcripts/sessions/*/`. Not every
-line of every file was checked. A malformed line stops the commit with its file and line number.
+Checked on 2026-11-15 against all 117 sessions in `data/transcripts/sessions/`.
 
 | Log | Fields found |
 |---|---|
-| `mcp_calls_<role>.jsonl` | `wall_time_iso`, `server`, `tool`, `arguments`, `pid`, `elapsed_sec`, `ok`, `error`; watchdog calls also have `result` |
-| `events_<server>.jsonl` | `event_id`, `event_type` (`skill_start` / `skill_end`), `timestamp_ns`, `wall_time_iso`, `payload`, `subscriber_count`, `seq` |
+| `mcp_calls_<role>.jsonl` | `wall_time_iso`, `server`, `tool`, `arguments`, `pid`, `elapsed_sec`, `ok`, `error`, `result` |
+| `events_watchdog.jsonl` | `event_id`, `event_type`, `timestamp_ns`, `wall_time_iso`, `payload` (with `step_id`, `phase`, `monitor_id`, ...), `subscriber_count`, `seq`. Event types: `monitor_armed`, `watchdog_ready`, `monitor_disarmed`, `monitor_fire`, `look`, `verdict`, `observation`, `run_verdict`, `frames_captured` |
+| `events_executor_monitor.jsonl`, `events_<server>.jsonl` | same envelope as above; server logs carry `skill_start` / `skill_end` |
 | `orchestrator/*.jsonl` | `type`, `wall_ns` (no `wall_time_iso`; not committed yet) |
 
-- `wall_time_iso` is present in every events and MCP record seen, with a `+00:00` offset.
+- **Every non-blank line** of every `events_*.jsonl` / `mcp_calls_*.jsonl` file has
+  `wall_time_iso` (`+00:00` offset). No file has CRLF line endings or a partial last line.
   `timestamp_ns` is the per-process monotonic clock and is ignored.
-- **No record has a top-level step field.** Task steps appear only as executor calls
-  `scene.begin_step` / `scene.end_step` with `arguments.step_id` (e.g. `pick_inverted_u_brown`,
-  with `claimed_outcome` on `end_step`). As a result:
+- **There is no common per-record step field.** Task steps appear as executor calls
+  `scene.begin_step` / `scene.end_step` (`arguments.step_id`, e.g. `pick_u_orange`, with
+  `claimed_outcome` on `end_step`). WatchDog events carry `payload.step_id`, which is often
+  `null` at run scope. As a result:
   - the default segmentation is **`by_window`** (`--window-s 5`);
   - `by_field` defaults to `--step-field arguments.step_id`, but only the begin/end calls
     carry it, so it needs `--missing-step unassigned`, and everything else lands in `_unassigned`;
@@ -119,7 +124,7 @@ line of every file was checked. A malformed line stops the commit with its file 
 | segmentation | `by_window`, 5 s | `--segment`, `--window-s` |
 | step id (`by_field`) | `arguments.step_id` | `--step-field` |
 | log files / role | `^(?:events\|mcp_calls)_(?P<role>.+)\.jsonl$` | `--log-pattern` |
-| role aliases | `gripper=watchdog`, `motion=watchdog`, `scene=watchdog` | `--role-alias NAME=ROLE` |
+| role aliases | `gripper=backend`, `motion=backend`, `scene=backend` | `--role-alias NAME=ROLE` |
 | frames directory | `frames` (no session has one; `images_recorded: false`) | `--frames-dir` / `--no-frames` |
 
 ## Output layout
@@ -157,14 +162,15 @@ Each command is installed as a console script and also runs as `python -m wdchai
 
 ```bash
 # commit (session dir is read-only; --out must be outside it)
-S=20260901T204152Z
+S=20261007T205057Z   # a guarded S1 session
 wdchain-commit-session --session-dir data/transcripts/sessions/$S --out commitments/$S \
     --segment by_window --window-s 5
 wdchain-commit-session --session-dir data/transcripts/sessions/$S --out commitments/${S}_steps \
     --segment by_field --step-field arguments.step_id --missing-step unassigned
 
 # proof for chunk N of one step manifest (printed as JSON)
-wdchain-prove --manifest commitments/$S/manifests/executor/w000000.json --chunk-index 0 > proof.json
+ls commitments/$S/manifests/*/          # step ids per role (windows with no records have no file)
+wdchain-prove --manifest commitments/$S/manifests/watchdog/w000000.json --chunk-index 0 > proof.json
 
 # verify: chunk bytes must hash to --digest, and the proof must lead to --root
 wdchain-verify --store commitments/$S/store --digest 0x<chunk_digest> \
@@ -184,8 +190,9 @@ determinism, write-once storage, and wall-clock ordering.
 - **The whole `data/` folder is git-ignored** (local only). The one exception is
   `data/IMPORT_INVENTORY.md`, which is tracked.
 - **Copied on or before 2026-11-15** by the repository owner, by hand:
-  - `data/transcripts/sessions/` holds 54 recorded sessions. The rosbags (`bag/`, ~1.3 GB)
-    are not needed by wdchain and are never read.
+  - `data/transcripts/sessions/` holds 117 recorded sessions (2026-10-07 to 2026-11-03, ~415 MB)
+    without rosbags, which wdchain does not need. (An earlier copy of 54 September sessions,
+    most of them missing their logs, was replaced.)
   - `data/paper_results/` holds the paper results scaffolding (batch `20261005_smoke`; no scored
     output yet).
 - **Record:** [`data/IMPORT_INVENTORY.md`](data/IMPORT_INVENTORY.md) lists every file with its

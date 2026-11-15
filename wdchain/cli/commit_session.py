@@ -2,8 +2,8 @@
 
 Examples::
 
-    wdchain-commit-session --session-dir data/transcripts/sessions/20260901T204152Z \\
-        --out commitments/20260901T204152Z --segment by_window --window-s 5
+    wdchain-commit-session --session-dir data/transcripts/sessions/20261007T205057Z \\
+        --out commitments/20261007T205057Z --segment by_window --window-s 5
 
     wdchain-commit-session --session-dir <session> --out <out> \\
         --segment by_field --step-field arguments.step_id --missing-step unassigned

@@ -7,9 +7,10 @@ A session directory (``WATCHDOG_SESSION_DIR``) containing:
 * JSONL logs matched by ``--log-pattern`` (default :data:`DEFAULT_LOG_PATTERN`), e.g.
   ``events_watchdog.jsonl`` and ``mcp_calls_<role>.jsonl``. The regex's ``role`` named
   group, mapped through ``role_aliases``, gives the witness role. So
-  ``events_{gripper,motion,scene}.jsonl``, ``events_watchdog.jsonl`` and
-  ``mcp_calls_watchdog.jsonl`` are all ``watchdog``, and ``mcp_calls_executor.jsonl`` is
-  ``executor``.
+  ``events_watchdog.jsonl`` and ``mcp_calls_watchdog.jsonl`` are ``watchdog``,
+  ``mcp_calls_executor.jsonl`` is ``executor``, ``events_executor_monitor.jsonl`` is
+  ``executor_monitor``, and the skill-server logs ``events_{gripper,motion,scene}.jsonl``
+  are ``backend``.
 * Other top-level files (e.g. the recorder's own ``manifest.json``) are fingerprinted in
   the session index but not chunked. Sub-directories (``bag/``, ``orchestrator/``) are
   listed as not committed.
@@ -63,10 +64,11 @@ DEFAULT_TIME_FIELD = "wall_time_iso"
 # scene.begin_step / scene.end_step calls, as arguments.step_id.
 DEFAULT_STEP_FIELD = "arguments.step_id"
 DEFAULT_LOG_PATTERN = r"^(?:events|mcp_calls)_(?P<role>.+)\.jsonl$"
-# events_{gripper,motion,scene}.jsonl are the WatchDog event streams (published on
-# /watchdog/events). They are committed under the watchdog role, separate from the
-# executor's tool-call report (mcp_calls_executor.jsonl).
-DEFAULT_ROLE_ALIASES = {"gripper": "watchdog", "motion": "watchdog", "scene": "watchdog"}
+# events_{gripper,motion,scene}.jsonl are skill events from the robot-side MCP servers.
+# They also exist in unguarded (S4) sessions where no WatchDog ran, so they are neither
+# WatchDog nor executor testimony, and they are committed as their own role, "backend".
+# events_executor_monitor.jsonl (S4) keeps its own role, "executor_monitor".
+DEFAULT_ROLE_ALIASES = {"gripper": "backend", "motion": "backend", "scene": "backend"}
 DEFAULT_FRAMES_DIR = "frames"
 # Epoch seconds with a fraction (1767268800.250), or an integer epoch in s/ms/us/ns.
 DEFAULT_FRAME_TIME_REGEX = r"(?P<ts>\d{10}\.\d+|\d{10,19})"
