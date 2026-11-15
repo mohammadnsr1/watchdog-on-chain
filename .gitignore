@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Imported WatchDog_V1 data (sessions, rosbags, paper results): local only, never tracked.
+# The inventory is the provenance record and stays tracked.
+data/*
+!data/IMPORT_INVENTORY.md
+
+# Large binaries anywhere else
+*.mcap
+*.db3
+*.bag
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+
+# wdchain content-addressed chunk stores (regenerable from the session + settings)
+store/
+
+# Commitment outputs stay tracked
+!**/manifests/**/*.json
+!**/session_index.json

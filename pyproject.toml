@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wdchain"
+version = "0.1.0"
+description = "Evidence commitment for WatchDog sessions: canonical chunks, keccak256 Merkle roots and proofs (OpenZeppelin MerkleProof compatible)."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "eth-hash[pycryptodome]>=0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
+[project.scripts]
+wdchain-commit-session = "wdchain.cli.commit_session:main"
+wdchain-prove = "wdchain.cli.prove:main"
+wdchain-verify = "wdchain.cli.verify:main"
+
+[tool.setuptools.packages.find]
+include = ["wdchain*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
