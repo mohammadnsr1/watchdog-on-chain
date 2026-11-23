@@ -24,8 +24,21 @@ data/*
 *.mov
 *.webm
 
+# Secrets: never commit private keys. .env.example holds anvil's public test keys only.
+.env
+
+# Foundry build output and broadcast logs
+out/
+cache/
+broadcast/
+lib/
+
 # wdchain content-addressed chunk stores (regenerable from the session + settings)
 store/
+
+# Local deployment records and generated fixtures (regenerable; chain-specific)
+deployments/*.json
+fixtures/*.json
 
 # Commitment outputs stay tracked
 !**/manifests/**/*.json

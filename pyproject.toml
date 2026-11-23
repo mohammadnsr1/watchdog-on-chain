@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "eth-hash[pycryptodome]>=0.5",
+    "eth-account>=0.11",
+    "web3>=6.15",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +23,8 @@ dev = [
 wdchain-commit-session = "wdchain.cli.commit_session:main"
 wdchain-prove = "wdchain.cli.prove:main"
 wdchain-verify = "wdchain.cli.verify:main"
+wdchain-anchor-session = "wdchain.cli.anchor_session:main"
+wdchain-verify-onchain = "wdchain.cli.verify_onchain:main"
 
 [tool.setuptools.packages.find]
 include = ["wdchain*"]
@@ -28,3 +32,9 @@ include = ["wdchain*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# Tests marked `chain` need a running anvil and a deployed registry, so they are skipped
+# unless explicitly selected:  pytest -m chain
+addopts = "-m 'not chain'"
+markers = [
+    "chain: requires a live chain (anvil) and a deployed EvidenceRegistry",
+]

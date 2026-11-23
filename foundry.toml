@@ -1,0 +1,20 @@
+[profile.default]
+src = "contracts"
+test = "contracts/test"
+script = "contracts/script"
+out = "out"
+libs = ["lib"]
+solc = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+
+# Foundry code may not touch the filesystem unless a path is listed here.
+# fixtures/  : read-only. The Merkle fixture is produced by scripts/make_merkle_fixture.py and
+#              read by EvidenceRegistry.t.sol to prove Python and Solidity agree on the scheme.
+# deployments/: written by the deploy script so the Python client can find the registry address.
+fs_permissions = [
+    { access = "read", path = "./fixtures" },
+    { access = "read-write", path = "./deployments" },
+]
+
+remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]

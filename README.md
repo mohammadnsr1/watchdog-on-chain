@@ -8,11 +8,15 @@ session directory into:
 - a **session index** listing every step root per role,
 - **Merkle proofs** for individual chunks, plus a verifier.
 
-There is no blockchain code yet. The roots and proofs are built so that a later smart contract
-can check them with OpenZeppelin `MerkleProof.verify`.
+Phase 1 Part B adds the chain: `contracts/EvidenceRegistry.sol` anchors one Merkle root per
+`(session, role, step)`, and a proof generated in Python verifies inside the contract with
+OpenZeppelin `MerkleProof.verify`. See "Phase 1 Part B" below.
 
 Executor and WatchDog are **independent witnesses**. Their evidence is committed separately,
-with separate manifests and separate roots, and is never merged.
+with separate manifests and separate roots, signed by different keys, and is never merged.
+
+Design: [`docs/DESIGN.md`](docs/DESIGN.md) · Milestones: [`docs/MILESTONES.md`](docs/MILESTONES.md)
+· Standing rules for Claude Code: [`CLAUDE.md`](CLAUDE.md)
 
 ## Install
 
@@ -181,7 +185,94 @@ wdchain-verify --store commitments/$S/store --digest 0x<chunk_digest> \
 
 `pytest -q` runs on synthetic sessions only (generated in `tests/conftest.py`). The tests cover
 canonical JSON, Merkle trees with 1/2/3/7/8 leaves, tamper detection, role separation,
-determinism, write-once storage, and wall-clock ordering.
+determinism, write-once storage, wall-clock ordering, and the offline chain layer (step-key ABI
+encoding, fixture determinism, configuration errors). Tests that need a live chain are marked
+`chain` and skipped by default; run them with `pytest -m chain`.
+
+## Phase 1 Part B — anchoring evidence on a chain
+
+**What it does.** `EvidenceRegistry.sol` stores one `Commit { root, committer, time, hashScheme }`
+per step key, where `stepKey = keccak256(abi.encode(sessionId, role, stepId))` and `role` is
+`Executor` or `WatchDog`. Because the role is part of the key, the two witnesses can never
+overwrite each other. Commits are **write-once**: a second commit to the same key reverts, so an
+anchored root cannot be revised. `verifyChunk(stepKey, chunkDigest, proof)` recomputes
+`leaf = keccak256(chunkDigest)` and folds the proof, exactly as `wdchain` does off-chain.
+
+Raw data never goes on-chain: one 32-byte root per step and per role, nothing else.
+
+> No access control yet. Any address may commit for any role; `msg.sender` is recorded but not
+> restricted. Phase 2's job contract binds the assigned agent per role (see `docs/MILESTONES.md`,
+> M2-A).
+
+### Run order
+
+```bash
+# 1. Install OpenZeppelin and forge-std into lib/ (lib/ is git-ignored, so --no-git
+#    keeps them out of the index; drop it if you prefer submodules).
+forge install foundry-rs/forge-std --no-git
+forge install OpenZeppelin/openzeppelin-contracts --no-git
+forge build
+
+# 2. Python side
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e '.[dev]'
+
+# 3. Secrets: copy the example and keep .env out of git (it already is).
+cp .env.example .env        # anvil's public test keys — LOCAL TEST ONLY
+set -a; source .env; set +a
+
+# 4. Start a local chain in another terminal, and leave it running
+anvil
+
+# 5. Deploy; writes deployments/anvil.json for the Python client
+forge script contracts/script/DeployEvidenceRegistry.s.sol:DeployEvidenceRegistry \
+    --rpc-url "$WDCHAIN_RPC_URL" --private-key "$WDCHAIN_EXECUTOR_KEY" --broadcast
+
+# 6. Generate the Python→Solidity fixture, then run both test suites
+python3 scripts/make_merkle_fixture.py
+forge test -vv            # -vv prints the gas numbers
+pytest -q
+
+# 7. Commit and anchor one real session
+S=20261007T205057Z
+wdchain-commit-session --session-dir data/transcripts/sessions/$S --out commitments/$S \
+    --segment by_window --window-s 5
+wdchain-anchor-session --out commitments/$S --batch-size 25 --dry-run   # look first
+wdchain-anchor-session --out commitments/$S --batch-size 25
+cat commitments/$S/anchor_log.csv        # tx hashes, blocks, gas
+
+# 8. Verify one chunk off-chain and on-chain
+wdchain-verify-onchain --manifest commitments/$S/manifests/watchdog/w000000.json \
+    --store commitments/$S/store --chunk-index 0        # expect VALID / VALID
+
+# 9. Tamper test: flip one byte of a stored chunk and watch verification fail
+D=$(python3 -c "import json,sys; print(json.load(open('commitments/$S/manifests/watchdog/w000000.json'))['chunk_digests'][0][2:])")
+chmod u+w commitments/$S/store/$D
+printf 'x' | dd of=commitments/$S/store/$D bs=1 seek=5 conv=notrunc 2>/dev/null
+wdchain-verify-onchain --manifest commitments/$S/manifests/watchdog/w000000.json \
+    --store commitments/$S/store --chunk-index 0        # expect INVALID, exit 1
+```
+
+Step 9 edits a file under `commitments/`, which is generated output, never the read-only session
+data. Delete that commitment directory and re-run step 7 to get a clean store back.
+
+### Environment variables
+
+| Variable | Meaning |
+|---|---|
+| `WDCHAIN_RPC_URL` | JSON-RPC endpoint (anvil: `http://127.0.0.1:8545`) |
+| `WDCHAIN_EXECUTOR_KEY` | signs executor evidence commits |
+| `WDCHAIN_WATCHDOG_KEY` | signs WatchDog evidence commits (a **different** key) |
+| `WDCHAIN_REGISTRY_ADDRESS` | optional; overrides `deployments/anvil.json` |
+| `WDCHAIN_DEPLOYMENT`, `WDCHAIN_ABI_PATH` | optional path overrides |
+
+`.env` is git-ignored. Only anvil's publicly known test keys belong in `.env.example`.
+
+### On-chain roles
+
+The registry's `Role` enum has `Executor` and `WatchDog` only. `wdchain` also produces `backend`
+(skill-server events) and `executor_monitor` (S4) roles; `wdchain-anchor-session` reports those
+as off-chain and skips them. Giving them on-chain roles is an open decision in `CLAUDE.md`.
 
 ## Data provenance
 
